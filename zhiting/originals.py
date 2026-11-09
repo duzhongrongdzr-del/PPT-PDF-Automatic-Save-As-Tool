@@ -7,7 +7,9 @@ from .archive import EXTENSIONS, digest_file, signature, temporary_name
 def title_matches_name(title, filename):
     name = Path(filename).name
     stem = Path(filename).stem
-    reader = r"(?:WPS|Microsoft PowerPoint|PowerPoint|Adobe|Acrobat|SumatraPDF|Foxit|福昕|PDF-XChange|Microsoft Edge|Google Chrome|Mozilla Firefox)"
+    # Edge inserts a zero-width formatting character in its product-name suffix.
+    # Permit it there only; the user's actual document name still matches exactly.
+    reader = r"(?:WPS|Microsoft PowerPoint|PowerPoint|Adobe|Acrobat|SumatraPDF|Foxit|福昕|PDF-XChange|Microsoft[\u200b\u200e\u200f]*\s+Edge|Google Chrome|Mozilla Firefox)"
     tail = r"(?:\s*(?:\[[^\]]*\]|\([^)]*\)|（[^）]*）))*\s*(?:[-—–]\s*(?:[^-—–]{1,80}\s[-—–]\s)?" + reader + r".*)?"
     if Path(name).suffix.lower() in EXTENSIONS:
         prefixes = [re.escape(name), re.escape(stem)]

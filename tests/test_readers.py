@@ -53,3 +53,7 @@ class PDFReaderTests(unittest.TestCase):
             self.assertEqual(_existing_path(path.as_uri()), str(path.resolve()))
             self.assertEqual(_commandline_pdfs(app, ["报告.pdf - Microsoft Edge"]), [str(path.resolve())])
             self.assertEqual(_commandline_pdfs(app, ["新闻 - Microsoft Edge"]), [])
+
+    def test_edge_formatting_character_does_not_hide_pdf_name(self):
+        self.assertTrue(title_matches_name("PDF展示测试.pdf - Profile 1 - Microsoft\u200b Edge", "PDF展示测试.pdf"))
+        self.assertFalse(title_matches_name("PDF展示测试2.pdf - Profile 1 - Microsoft\u200b Edge", "PDF展示测试.pdf"))
