@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import hashlib
 import os
+import re
 import sqlite3
 import tempfile
 import time
@@ -15,6 +16,18 @@ CHUNK = 1024 * 1024
 def supported(path):
     p = Path(path)
     return p.suffix.lower() in EXTENSIONS and not p.name.startswith("~$")
+
+
+def temporary_name(path):
+    return Path(path).name.lower().startswith(("~tmp", "~wpp", "~ppt"))
+
+
+def move_without_overwrite(source, destination):
+    if os.name == "nt":
+        os.rename(source, destination)
+    else:
+        os.link(source, destination)
+        Path(source).unlink()
 
 
 def signature(path):
@@ -49,6 +62,31 @@ class Archive:
 
     def close(self):
         self.db.close()
+
+    def destination_for(self, source, digest):
+        """Keep the full original basename; collisions change the folder only."""
+        month = self.root / datetime.now().strftime("%Y-%m")
+        if temporary_name(source):
+            month /= "待确认原名"
+        candidate = month / source.name
+        number = 0
+        while candidate.exists():
+            if candidate.is_file() and digest_file(candidate) == digest:
+                return candidate
+            number += 1
+            version = digest[:16] if number == 1 else f"{digest[:16]}_{number}"
+            candidate = month / "其他版本" / version / source.name
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+
+    def should_restore_name(self, candidate, recorded_source, current_source, digest):
+        """Only migrate this app's old generated names or a verified temp copy."""
+        if temporary_name(current_source):
+            return False
+        old = Path(recorded_source or "")
+        stem = old.stem[:60].rstrip(" .") or "presentation"
+        legacy = re.fullmatch(re.escape(f"{stem}__{digest[:16]}") + r"(?:_\d+)?" + re.escape(old.suffix.lower()), candidate.name)
+        return bool(legacy) or (temporary_name(old) and temporary_name(candidate))
 
     def archive(self, source, cancel=lambda: False):
         source = Path(source).resolve()
@@ -85,32 +123,28 @@ class Archive:
             if cancel():
                 raise InterruptedError("已暂停或退出")
             digest = h.hexdigest()
-            row = self.db.execute("SELECT relative_path FROM copies WHERE digest=?", (digest,)).fetchone()
+            row = self.db.execute("SELECT relative_path, source FROM copies WHERE digest=?", (digest,)).fetchone()
             destination = None
+            status = "duplicate"
             if row:
                 candidate = (self.root / row[0]).resolve()
                 if candidate.is_relative_to(self.root) and candidate.is_file() and digest_file(candidate) == digest:
                     destination = candidate
-            status = "duplicate"
+                    if self.should_restore_name(candidate, row[1], source, digest):
+                        destination = self.destination_for(source, digest)
+                        if destination != candidate:
+                            if not destination.exists():
+                                move_without_overwrite(candidate, destination)
+                            # If an identical target already exists, retain the old file.
+                            # It may have been deliberately copied by the user.
+                            status = "renamed"
+                        with self.db:
+                            self.db.execute("UPDATE copies SET relative_path=?, source=? WHERE digest=?",
+                                            (str(destination.relative_to(self.root)), key, digest))
             if destination is None:
-                month = self.root / datetime.now().strftime("%Y-%m")
-                month.mkdir(exist_ok=True)
-                stem = source.stem[:60].rstrip(" .") or "presentation"
-                filename = f"{stem}__{digest[:16]}"
-                destination = month / f"{filename}{source.suffix.lower()}"
-                number = 1
-                while destination.exists():
-                    if destination.is_file() and digest_file(destination) == digest:
-                        break
-                    destination = month / f"{filename}_{number}{source.suffix.lower()}"
-                    number += 1
-                else:
-                    # os.rename never overwrites on Windows. Handle an external race safely.
-                    if os.name == "nt":
-                        os.rename(temporary, destination)
-                    else:
-                        os.link(temporary, destination)
-                        temporary.unlink()
+                destination = self.destination_for(source, digest)
+                if not destination.exists():
+                    move_without_overwrite(temporary, destination)
                     status = "saved"
                 with self.db:
                     self.db.execute("INSERT OR REPLACE INTO copies VALUES (?, ?, ?, ?)",

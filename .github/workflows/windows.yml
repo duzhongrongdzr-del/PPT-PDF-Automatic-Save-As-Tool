@@ -30,6 +30,7 @@ jobs:
           --hidden-import win32timezone
           --hidden-import win32com.client.dynamic
           --hidden-import pystray._win32
+          --hidden-import win32com.shell.shell
           main.py
       - name: Smoke test packaged app
         shell: pwsh
@@ -71,7 +72,7 @@ jobs:
       - name: Publish test version
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_TAG: v0.1.0-beta.${{ github.run_number }}.${{ github.run_attempt }}
+          BUILD_TAG: v0.1.1-beta.${{ github.run_number }}.${{ github.run_attempt }}
           BUILD_SHA: ${{ github.sha }}
         run: >-
           gh release create "$BUILD_TAG" release/ZhitingPPTSave-Windows-x64.zip release/SHA256SUMS.txt

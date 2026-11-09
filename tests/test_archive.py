@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from zhiting.archive import Archive, signature, supported
+from zhiting.archive import Archive, digest_file, signature, supported
 from zhiting.settings import load_config, save_config
 
 
@@ -30,6 +30,7 @@ class ArchiveTests(unittest.TestCase):
         result = self.archive.archive(source)
         self.assertEqual(result.status, "saved")
         self.assertEqual(Path(result.destination).read_bytes(), source.read_bytes())
+        self.assertEqual(Path(result.destination).name, source.name)
         self.assertEqual(signature(source), before)
 
     def test_same_content_different_name_and_directory_deduplicates(self):
@@ -43,12 +44,16 @@ class ArchiveTests(unittest.TestCase):
         second = self.archive.archive(self.source(content=b"new version"))
         self.assertEqual(second.status, "saved")
         self.assertNotEqual(first.destination, second.destination)
+        self.assertEqual(Path(first.destination).name, "报告.pptx")
+        self.assertEqual(Path(second.destination).name, "报告.pptx")
         self.assertEqual(Path(first.destination).read_bytes(), b"original")
 
     def test_same_name_different_content_never_overwrites(self):
         first = self.archive.archive(self.source("one/report.ppt", b"one"))
         second = self.archive.archive(self.source("two/report.ppt", b"two"))
         self.assertNotEqual(first.destination, second.destination)
+        self.assertEqual(Path(first.destination).name, "report.ppt")
+        self.assertEqual(Path(second.destination).name, "report.ppt")
         self.assertEqual(Path(first.destination).read_bytes(), b"one")
 
     def test_dedup_survives_restart(self):
@@ -134,6 +139,53 @@ class ArchiveTests(unittest.TestCase):
         for extension in ("ppt", "pptx", "pptm", "pps", "ppsx", "ppsm"):
             self.assertTrue(supported("test." + extension))
         self.assertFalse(supported("test.pdf"))
+
+    def test_long_unicode_and_extension_case_preserved(self):
+        source = self.source("会议材料" * 18 + ".PPTX")
+        self.assertEqual(Path(self.archive.archive(source).destination).name, source.name)
+
+    def test_legacy_generated_name_is_restored_without_duplicate(self):
+        source = self.source()
+        digest = digest_file(source)
+        legacy = self.destination / "2026-01" / f"{source.stem}__{digest[:16]}.pptx"
+        legacy.parent.mkdir()
+        legacy.write_bytes(source.read_bytes())
+        with self.archive.db:
+            self.archive.db.execute("INSERT INTO copies VALUES (?, ?, ?, ?)",
+                                    (digest, str(legacy.relative_to(self.destination)), str(source), "old"))
+        result = self.archive.archive(source)
+        self.assertEqual(result.status, "renamed")
+        self.assertEqual(Path(result.destination).name, source.name)
+        self.assertFalse(legacy.exists())
+        self.assertEqual(len(list(self.destination.rglob("*.pptx"))), 1)
+        self.assertEqual(self.archive.archive(source).status, "unchanged")
+
+    def test_legacy_temp_copy_is_renamed_when_original_is_known(self):
+        original = self.source()
+        temporary = self.source("~tmp179419384203869014.pptx")
+        first = self.archive.archive(temporary)
+        self.assertIn("待确认原名", first.destination)
+        result = self.archive.archive(original)
+        self.assertEqual(result.status, "renamed")
+        self.assertEqual(Path(result.destination).name, original.name)
+        self.assertFalse(Path(first.destination).exists())
+
+    def test_legacy_rename_never_overwrites_different_content(self):
+        original = self.source()
+        conflicting = self.archive.archive(self.source(content=b"existing archive"))
+        original.write_bytes(b"original")
+        temp = self.archive.archive(self.source("~tmp123.pptx"))
+        result = self.archive.archive(original)
+        self.assertEqual(Path(result.destination).name, original.name)
+        self.assertEqual(Path(result.destination).read_bytes(), b"original")
+        self.assertEqual(Path(conflicting.destination).read_bytes(), b"existing archive")
+        self.assertFalse(Path(temp.destination).exists())
+
+    def test_original_source_name_not_changed_when_duplicate_has_new_name(self):
+        first = self.archive.archive(self.source("first.PPTX"))
+        second = self.archive.archive(self.source("renamed.pptx"))
+        self.assertEqual(first.destination, second.destination)
+        self.assertEqual(Path(second.destination).name, "first.PPTX")
 
 
 if __name__ == "__main__":

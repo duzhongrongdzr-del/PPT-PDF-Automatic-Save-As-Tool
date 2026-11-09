@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
-from .archive import Archive
+from .archive import Archive, temporary_name
 from .detect import Detector
 from .settings import load_config, save_config, set_startup, startup_enabled, state_directory
 
@@ -164,18 +164,20 @@ class Application:
                             directory = chosen
                         result = detector.scan(lambda: self.cancelled(chosen))
                         errors = []
-                        for path in result["paths"]:
+                        for path in sorted(result["paths"], key=temporary_name):
                             if self.cancelled(chosen):
                                 break
                             try:
                                 copied = archive.archive(path, lambda: self.cancelled(chosen))
                                 if copied.status == "saved":
                                     saved += 1
+                                if copied.status in ("saved", "renamed"):
                                     last_copy = copied.destination
                                     logging.info("已保存 %s", copied.destination)
                             except (OSError, ValueError, RuntimeError) as exc:
                                 errors.append(f"{Path(path).name}：{exc}")
                         if not self.cancelled(chosen):
+                            result.setdefault("unresolved_names", [p for p in result["paths"] if temporary_name(p)])
                             result.update(saved=saved, last_copy=last_copy, errors=errors)
                             self.events.put(("status", result))
                     except Exception as exc:
@@ -215,6 +217,8 @@ class Application:
                         self.status.set(f"监测中 · 本次识别 {count} 个文件 · 本次运行新增 {payload['saved']} 份")
                         if payload["errors"]:
                             detail = "等待重试：" + "；".join(payload["errors"])
+                        elif payload.get("unresolved_names"):
+                            detail = "检测到临时文件，原名尚未确认；副本保存在“待确认原名”文件夹。请导出诊断以便进一步适配。"
                         elif not count and payload["processes"]:
                             detail = "检测到 WPS / PowerPoint，暂未取得文件路径。请打开已保存的 PPT；若仍无法识别，请导出诊断。"
                         elif payload["last_copy"]:
