@@ -1,0 +1,4 @@
+psutil==7.1.3
+pywin32==311; sys_platform == 'win32'
+pystray==0.19.5
+Pillow==12.0.0

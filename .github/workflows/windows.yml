@@ -1,0 +1,80 @@
+name: Test and build Windows app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Test archive and settings
+        run: python -m unittest discover -s tests -v
+      - name: Build portable app
+        run: >-
+          python -m PyInstaller --noconfirm --clean --onedir --windowed
+          --name ZhitingPPTSave
+          --hidden-import win32timezone
+          --hidden-import win32com.client.dynamic
+          --hidden-import pystray._win32
+          main.py
+      - name: Smoke test packaged app
+        shell: pwsh
+        run: |
+          $resultPath = Join-Path $PWD 'smoke-result.json'
+          $app = Start-Process -FilePath 'dist/ZhitingPPTSave/ZhitingPPTSave.exe' -ArgumentList @('--self-test', $resultPath) -PassThru
+          if (-not $app.WaitForExit(60000)) { $app.Kill(); throw 'Packaged smoke test timed out' }
+          if ($app.ExitCode -ne 0 -or -not (Test-Path $resultPath)) { throw 'Packaged smoke test failed' }
+          $result = Get-Content $resultPath -Raw | ConvertFrom-Json
+          if (-not $result.ok) { throw 'Packaged smoke test did not succeed' }
+      - name: Package download
+        shell: pwsh
+        run: |
+          Copy-Item README.md dist/ZhitingPPTSave/README.md
+          Copy-Item QUICKSTART.txt dist/ZhitingPPTSave/QUICKSTART.txt
+          Copy-Item THIRD_PARTY.md dist/ZhitingPPTSave/THIRD_PARTY.md
+          Compress-Archive -Path dist/ZhitingPPTSave -DestinationPath dist/ZhitingPPTSave-Windows-x64.zip
+          $hash = (Get-FileHash dist/ZhitingPPTSave-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  ZhitingPPTSave-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZhitingPPTSave-Windows-x64
+          path: |
+            dist/ZhitingPPTSave-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          retention-days: 30
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ZhitingPPTSave-Windows-x64
+          path: release
+      - name: Publish test version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: v0.1.0-beta.${{ github.run_number }}.${{ github.run_attempt }}
+          BUILD_SHA: ${{ github.sha }}
+        run: >-
+          gh release create "$BUILD_TAG" release/ZhitingPPTSave-Windows-x64.zip release/SHA256SUMS.txt
+          --target "$BUILD_SHA" --prerelease --latest=false
+          --title "知庭 PPT 自动留存 $BUILD_TAG"
+          --notes-file RELEASE_NOTES.md

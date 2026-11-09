@@ -1,2 +1,84 @@
-# PPT-PPT-Seamless-Automatic-Save-As-Tool
-PPT开启后，自动转存至指定位置，无通知提示。Once a PPT is opened, it automatically saves a copy to the specified location without any notification.
+# 知庭 · PPT 自动留存
+
+Windows 后台小工具：在 WPS 演示 / Microsoft PowerPoint 打开本地或 U 盘 PPT 后，尝试识别原文件并静默复制到指定目录。相同文件内容不重复留存。
+
+**当前为 0.1 测试版。复制与去重有自动测试，WPS / PowerPoint 的实际版本兼容性需要在使用者电脑上验证。**
+
+## 下载和试用
+
+1. 打开 [Releases 下载页](https://github.com/duzhongrongdzr-del/PPT-PPT-Seamless-Automatic-Save-As-Tool/releases)。
+2. 在最新测试版本的 Assets 中下载 `ZhitingPPTSave-Windows-x64.zip`。不要下载 `Source code`，那是开发源码。
+3. 解压整个文件夹到固定位置，双击 `ZhitingPPTSave.exe`。保留旁边的 `_internal` 文件夹。
+4. 首次选择一个专门保存 PPT 副本的目录，例如 `D:\PPT留存`。
+5. 在 WPS 中打开一个已保存的 PPT，等待约 5–15 秒，再点“打开目录”查看副本。
+6. 关闭设置窗口后仍在托盘运行。右键绿色托盘图标可暂停、打开目录、退出。图标可能在“隐藏的图标”里。
+
+**无需安装 Python、无需购买服务器、无需打开网页运行。** 程序必须在打开 PPT 的那台 Windows 电脑上运行。第一版目标环境为 Windows 10 / 11 的 x64 电脑，WPS/Office 可以是 32 位或 64 位，但具体组合仍需实测。
+
+这是未做商业代码签名的测试程序。如果系统提示发布者未知，请先核对来源及发布页的 SHA256SUMS.txt，不要关闭安全软件或全局安全保护。
+
+## 功能与保存规则
+
+- WPS 优先，兼容尝试 PowerPoint；支持 `.ppt/.pptx/.pptm/.pps/.ppsx/.ppsm`。
+- 在指定目录下按 `年-月` 保存；文件名为 `原文件名__内容摘要.扩展名`。较长原文件名会截短。
+- 使用完整 SHA-256 去重。同一内容即使改名或来自另一块 U 盘，也只保存一次。
+- 内容修改并保存到磁盘后，会生成新副本；不会覆盖以前的版本或同名不同内容的文件。
+- `.zhiting/index.sqlite3` 保存当前目录的去重记录。删除副本后再次识别到源文件，可以补存。
+- 切换保存目录后，在新目录重新建立记录，不自动搬运旧目录。
+- 按 1 MB 分块读写，未变化文件使用状态缓存。监测每轮间隔约 5 秒，耗时取决于打开文件数和接口响应。
+- 托盘支持暂停、退出、修改目录；登录 Windows 后自动运行默认关闭，可自行勾选。
+- 不改写或删除源 PPT，不执行文稿宏，不模拟按键，不主动启动 WPS 或 PowerPoint，不弹出复制成功通知。
+- PPT、配置、日志和索引仅在本机处理。程序没有上传文件、联网遥测或自动更新功能。
+
+## 第一版的识别边界
+
+识别同时尝试进程文件句柄、已运行程序的 COM 接口和运行对象表。某些 WPS 版本不暴露 COM，文件载入后也可能关闭句柄，因此**不能保证所有版本都能识别**。只看窗口标题无法可靠确定原文件路径，程序不会据此猜测或扫描整块硬盘。
+
+文件句柄方式也可能识别 WPS / PowerPoint 尚持有句柄的最近文件或预览文件，因此不能保证与当前标签页严格一一对应。只有实际获得的本地演示文件路径会参与复制。
+
+- 只能复制已经保存到磁盘且可读取的内容。尚未保存的新文稿、未按保存的修改、仅有云端链接的文稿暂不支持。
+- 轮询可能漏掉很快打开又关闭的文稿。首次测试请保持文件打开至少 15 秒。
+- U 盘须在复制完成前保持连接；拔盘、权限不足、源文件正在写入或目标空间不足时会重试并在状态面板提示。
+- 程序与 WPS / PowerPoint 建议均以普通用户运行；不同权限级别可能导致识别受限。
+- 识别进程超时会被停止，保留已取得路径并在 30 秒后重试，不会结束 WPS / PowerPoint。
+- 内存占用还需目标电脑实测，不承诺固定 MB 数值。主程序与识别子进程应合计观察。
+- 多台电脑同时写同一网络归档目录不是此测试版的支持场景。
+
+## 建议的验收顺序
+
+| 操作 | 预期 |
+|---|---|
+| WPS 打开本地 PPT，保持 15 秒 | 指定目录出现可正常打开的副本 |
+| WPS 打开 U 盘 PPT | 同样产生副本 |
+| 同一文件改名后打开 | 副本数量不增加 |
+| 修改一处内容、保存 | 增加一个新版本 |
+| PowerPoint 重复以上操作 | 验证 PowerPoint 兼容性 |
+| 暂停后打开另一份 PPT | 暂停期间不新增副本 |
+| 继续监测，文稿仍打开 | 自动补存 |
+| 退出程序后再打开 PPT | 不再复制 |
+
+如果识别不到，打开设置，点击“导出诊断”。诊断包含 Windows 版本、相关进程、识别结果和本机文件路径，不包含 PPT 内容，也不会自动发送。反馈时可先隐去敏感文件名。可附 WPS“关于”页面中的版本号。
+
+## 开发与打包
+
+使用 Python 3.12。源码可在 Windows 开发环境运行：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-build.txt
+.venv\Scripts\python main.py
+```
+
+核心测试可跨平台运行，无需 Office：
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions 在 Windows 上执行核心测试、PyInstaller 打包和可执行文件冒烟测试；通过后发布带版本号的预发布 ZIP。冒烟测试验证依赖、Tk 窗口初始化、子进程和文件复制，不代表真实 Office/WPS 兼容性已经验证。
+
+源码入口为 `main.py`；`zhiting/archive.py` 处理安全复制和去重；`zhiting/detect.py` 处理识别；`zhiting/app.py` 提供托盘与设置。
+
+配置和滚动日志位于 `%LOCALAPPDATA%\ZhitingPPTSave`。更新时先退出程序，再解压新版本；如果更换程序目录，取消后重新勾选开机启动以更新路径。卸载时先取消开机启动并退出，再删除程序文件夹。已有 PPT 副本不会自动删除。
+
+实现参考：[psutil 文件句柄限制](https://psutil.readthedocs.io/en/latest/#psutil.Process.open_files)、[pywin32 GetActiveObject](https://mhammond.github.io/pywin32/pythoncom__GetActiveObject_meth.html)、[PyInstaller 打包说明](https://pyinstaller.org/en/stable/operating-mode.html)。
