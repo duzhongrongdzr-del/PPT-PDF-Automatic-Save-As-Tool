@@ -8,3 +8,4 @@ dist/
 *.sqlite3
 *.part
 smoke-result.json
+source-smoke.json

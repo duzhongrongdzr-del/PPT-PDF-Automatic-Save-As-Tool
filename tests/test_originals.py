@@ -53,3 +53,8 @@ class OriginalNameTests(unittest.TestCase):
             self.assertTrue(title_matches_name(title, "报告.pptx"), title)
         for title in ("报告2.pptx - WPS Office", "旧报告.pptx", "报告.docx - WPS Office"):
             self.assertFalse(title_matches_name(title, "报告.pptx"), title)
+
+    def test_shortcut_without_extension_matches_document_title(self):
+        self.assertTrue(title_matches_name("验证.pptx - WPS Office", "验证"))
+        self.assertTrue(title_matches_name("报告.v2.pptx - WPS Office", "报告.v2"))
+        self.assertFalse(title_matches_name("验证.docx - WPS Office", "验证"))

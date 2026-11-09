@@ -1,15 +1,21 @@
 """Verify temporary-file/original-file relationships by bytes, never by guesswork."""
 from pathlib import Path
 import re
-from .archive import digest_file, signature, temporary_name
+from .archive import EXTENSIONS, digest_file, signature, temporary_name
 
 
 def title_matches_name(title, filename):
     name = Path(filename).name
     stem = Path(filename).stem
     tail = r"(?:\s*(?:\[[^\]]*\]|\([^)]*\)|（[^）]*）))*\s*(?:[-—–]\s*(?:WPS|Microsoft PowerPoint|PowerPoint).*)?"
-    return any(re.fullmatch(re.escape(part) + tail, title.strip(), flags=re.IGNORECASE)
-               for part in (name, stem))
+    if Path(name).suffix.lower() in EXTENSIONS:
+        prefixes = [re.escape(name), re.escape(stem)]
+    else:
+        # Recent shortcuts often omit the document extension in their own name.
+        extensions = "|".join(re.escape(ext) for ext in sorted(EXTENSIONS))
+        prefixes = [re.escape(name) + f"(?:{extensions})?"]
+    return any(re.fullmatch(prefix + tail, title.strip(), flags=re.IGNORECASE)
+               for prefix in prefixes)
 
 
 def stable_digest(path, cache):

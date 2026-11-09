@@ -23,6 +23,11 @@ jobs:
         run: python -m pip install -r requirements-build.txt
       - name: Test archive and settings
         run: python -m unittest discover -s tests -v
+      - name: Check Windows integration before packaging
+        shell: pwsh
+        run: |
+          python main.py --self-test source-smoke.json
+          if ($LASTEXITCODE -ne 0) { Get-Content source-smoke.json -Raw; throw 'Windows integration test failed' }
       - name: Build portable app
         run: >-
           python -m PyInstaller --noconfirm --clean --onedir --windowed
@@ -38,6 +43,7 @@ jobs:
           $resultPath = Join-Path $PWD 'smoke-result.json'
           $app = Start-Process -FilePath 'dist/ZhitingPPTSave/ZhitingPPTSave.exe' -ArgumentList @('--self-test', $resultPath) -PassThru
           if (-not $app.WaitForExit(60000)) { $app.Kill(); throw 'Packaged smoke test timed out' }
+          if (Test-Path $resultPath) { Get-Content $resultPath -Raw }
           if ($app.ExitCode -ne 0 -or -not (Test-Path $resultPath)) { throw 'Packaged smoke test failed' }
           $result = Get-Content $resultPath -Raw | ConvertFrom-Json
           if (-not $result.ok) { throw 'Packaged smoke test did not succeed' }
