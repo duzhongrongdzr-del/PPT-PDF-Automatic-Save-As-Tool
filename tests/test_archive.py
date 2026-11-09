@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from zhiting.archive import Archive, digest_file, signature, supported
-from zhiting.settings import load_config, save_config
+from pptsave.archive import Archive, digest_file, signature, supported
+from pptsave.settings import load_config, save_config
 
 
 class ArchiveTests(unittest.TestCase):
@@ -84,13 +84,13 @@ class ArchiveTests(unittest.TestCase):
     def test_unchanged_copy_skips_disk_write(self):
         source = self.source()
         self.archive.archive(source)
-        with patch("zhiting.archive.tempfile.mkstemp", side_effect=AssertionError("unexpected write")):
+        with patch("pptsave.archive.tempfile.mkstemp", side_effect=AssertionError("unexpected write")):
             self.assertEqual(self.archive.archive(source).status, "unchanged")
 
     def test_source_changing_during_copy_is_retried(self):
         source = self.source()
         sig = signature(source)
-        with patch("zhiting.archive.signature", side_effect=[sig, (999, 0, 0, 0)]):
+        with patch("pptsave.archive.signature", side_effect=[sig, (999, 0, 0, 0)]):
             with self.assertRaises(OSError):
                 self.archive.archive(source)
         self.assertFalse(list(self.destination.rglob("*.pptx")))

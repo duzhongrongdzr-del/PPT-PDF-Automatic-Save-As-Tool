@@ -8,12 +8,12 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from zhiting.archive import Archive
-from zhiting.detect import Detector
+from pptsave.archive import Archive
+from pptsave.detect import Detector
 
 
 def write_pdf(path):
-    stream = b"BT /F1 18 Tf 40 140 Td (Zhiting PDF integration test) Tj ET"
+    stream = b"BT /F1 18 Tf 40 140 Td (PPTSave PDF integration test) Tj ET"
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -41,7 +41,7 @@ def main():
     edge = next((p for p in candidates if p.is_file()), None)
     if edge is None:
         raise RuntimeError("CI requires the installed Microsoft Edge browser")
-    with tempfile.TemporaryDirectory(prefix="zhiting-pdf-ci-", ignore_cleanup_errors=True) as temp:
+    with tempfile.TemporaryDirectory(prefix="pptsave-pdf-ci-", ignore_cleanup_errors=True) as temp:
         root = Path(temp)
         source = root / "PDF展示测试.pdf"
         write_pdf(source)

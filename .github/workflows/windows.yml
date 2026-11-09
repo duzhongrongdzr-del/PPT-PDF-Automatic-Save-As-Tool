@@ -33,7 +33,7 @@ jobs:
       - name: Build portable app
         run: >-
           python -m PyInstaller --noconfirm --clean --onedir --windowed
-          --name ZhitingPPTSave
+          --name PPTSave
           --hidden-import win32timezone
           --hidden-import win32com.client.dynamic
           --hidden-import pystray._win32
@@ -43,7 +43,7 @@ jobs:
         shell: pwsh
         run: |
           $resultPath = Join-Path $PWD 'smoke-result.json'
-          $app = Start-Process -FilePath 'dist/ZhitingPPTSave/ZhitingPPTSave.exe' -ArgumentList @('--self-test', $resultPath) -PassThru
+          $app = Start-Process -FilePath 'dist/PPTSave/PPTSave.exe' -ArgumentList @('--self-test', $resultPath) -PassThru
           if (-not $app.WaitForExit(60000)) { $app.Kill(); throw 'Packaged smoke test timed out' }
           if (Test-Path $resultPath) { Get-Content $resultPath -Raw }
           if ($app.ExitCode -ne 0 -or -not (Test-Path $resultPath)) { throw 'Packaged smoke test failed' }
@@ -52,18 +52,20 @@ jobs:
       - name: Package download
         shell: pwsh
         run: |
-          Copy-Item README.md dist/ZhitingPPTSave/README.md
-          Copy-Item QUICKSTART.txt dist/ZhitingPPTSave/QUICKSTART.txt
-          Copy-Item THIRD_PARTY.md dist/ZhitingPPTSave/THIRD_PARTY.md
-          Compress-Archive -Path dist/ZhitingPPTSave -DestinationPath dist/ZhitingPPTSave-Windows-x64.zip
-          $hash = (Get-FileHash dist/ZhitingPPTSave-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  ZhitingPPTSave-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt
+          Copy-Item README.md dist/PPTSave/README.md
+          Copy-Item QUICKSTART.txt dist/PPTSave/QUICKSTART.txt
+          Copy-Item THIRD_PARTY.md dist/PPTSave/THIRD_PARTY.md
+          Copy-Item PPTSave-preview.png dist/PPTSave-preview.png
+          Compress-Archive -Path dist/PPTSave -DestinationPath dist/PPTSave-Windows-x64.zip
+          $hash = (Get-FileHash dist/PPTSave-Windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  PPTSave-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ZhitingPPTSave-Windows-x64
+          name: PPTSave-Windows-x64
           path: |
-            dist/ZhitingPPTSave-Windows-x64.zip
+            dist/PPTSave-Windows-x64.zip
             dist/SHA256SUMS.txt
+            dist/PPTSave-preview.png
           retention-days: 30
   release:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -75,15 +77,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: ZhitingPPTSave-Windows-x64
+          name: PPTSave-Windows-x64
           path: release
       - name: Publish test version
         env:
           GH_TOKEN: ${{ github.token }}
-          BUILD_TAG: v0.2.0-beta.${{ github.run_number }}.${{ github.run_attempt }}
+          BUILD_TAG: v0.2.1-beta.${{ github.run_number }}.${{ github.run_attempt }}
           BUILD_SHA: ${{ github.sha }}
         run: >-
-          gh release create "$BUILD_TAG" release/ZhitingPPTSave-Windows-x64.zip release/SHA256SUMS.txt
+          gh release create "$BUILD_TAG" release/PPTSave-Windows-x64.zip release/SHA256SUMS.txt
           --target "$BUILD_SHA" --prerelease --latest=false
-          --title "知庭 PPT / PDF 自动留存 $BUILD_TAG"
+          --title "PPTSave $BUILD_TAG"
           --notes-file RELEASE_NOTES.md

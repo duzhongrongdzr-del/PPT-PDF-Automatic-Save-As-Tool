@@ -1,7 +1,7 @@
 from pathlib import Path
 import tempfile
 import unittest
-from zhiting.originals import prefer_originals, title_matches_name
+from pptsave.originals import prefer_originals, title_matches_name
 
 
 class OriginalNameTests(unittest.TestCase):

@@ -2,9 +2,9 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from zhiting.detect import _commandline_pdfs, _existing_path
-from zhiting.originals import title_matches_name
-from zhiting.readers import local_reference, select_processes
+from pptsave.detect import _commandline_pdfs, _existing_path
+from pptsave.originals import title_matches_name
+from pptsave.readers import local_reference, select_processes
 
 
 def process(pid, name, parent=0, args=()):

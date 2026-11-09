@@ -7,7 +7,7 @@ def main():
     multiprocessing.freeze_support()
     if "--self-test" in sys.argv:
         try:
-            from zhiting.selftest import run
+            from pptsave.selftest import run
             run(sys.argv[-1])
         except Exception:
             import json
@@ -18,7 +18,7 @@ def main():
         return
     if sys.platform != "win32":
         raise SystemExit("此程序需要 Windows 10 / 11。")
-    from zhiting.app import run
+    from pptsave.app import run
     run(background="--background" in sys.argv)
 
 

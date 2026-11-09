@@ -1,13 +1,23 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 
 
 def state_directory():
-    return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "ZhitingPPTSave"
+    parent = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+    current = parent / "PPTSave"
+    legacy = parent / "ZhitingPPTSave"
+    if legacy.is_dir() and not current.exists():
+        legacy.rename(current)
+    elif not (current / "config.json").exists() and (legacy / "config.json").is_file():
+        # A new log directory may already exist after an interrupted upgrade.
+        current.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy / "config.json", current / "config.json")
+    return current
 
 
 def load_config(path):
@@ -35,7 +45,8 @@ def save_config(path, data):
 
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-RUN_NAME = "ZhitingPPTSave"
+RUN_NAME = "PPTSave"
+LEGACY_RUN_NAME = "ZhitingPPTSave"
 
 
 def startup_enabled():
@@ -48,6 +59,22 @@ def startup_enabled():
         return False
 
 
+def migrate_startup():
+    """Preserve the user's opt-in and refresh the executable's location."""
+    import winreg
+    enabled = startup_enabled()
+    if not enabled:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+                winreg.QueryValueEx(key, LEGACY_RUN_NAME)
+            enabled = True
+        except FileNotFoundError:
+            pass
+    if enabled:
+        set_startup(True)
+    return enabled
+
+
 def set_startup(enabled):
     import winreg
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
@@ -57,8 +84,9 @@ def set_startup(enabled):
             else:
                 command = [str(Path(sys.executable).with_name("pythonw.exe")), str(Path(sys.argv[0]).resolve()), "--background"]
             winreg.SetValueEx(key, RUN_NAME, 0, winreg.REG_SZ, subprocess.list2cmdline(command))
-        else:
+        # Remove the old entry only after the replacement has been written.
+        for name in (LEGACY_RUN_NAME,) if enabled else (RUN_NAME, LEGACY_RUN_NAME):
             try:
-                winreg.DeleteValue(key, RUN_NAME)
+                winreg.DeleteValue(key, name)
             except FileNotFoundError:
                 pass

@@ -7,13 +7,16 @@ import platform
 import queue
 import tempfile
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
 from .archive import Archive, temporary_name
 from .detect import Detector
-from .settings import load_config, save_config, set_startup, startup_enabled, state_directory
+from .settings import load_config, migrate_startup, save_config, set_startup, startup_enabled, state_directory
+
+AUTHOR_URL = "https://github.com/duzhongrongdzr-del"
 
 
 def make_icon():
@@ -48,16 +51,27 @@ class Application:
         self.paused = False
         self.snapshot = {}
         self.root = tk.Tk()
-        self.root.title(f"知庭 · PPT / PDF 自动留存  {__version__}")
-        self.root.geometry("660x490")
-        self.root.minsize(600, 460)
+        self.root.title(f"PPTSave  {__version__}")
+        self.root.geometry("680x540")
+        self.root.minsize(660, 520)
+        from PIL import ImageTk
+        self.window_icon = ImageTk.PhotoImage(make_icon(), master=self.root)
+        self.root.iconphoto(True, self.window_icon)
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
         self.destination = tk.StringVar(value=self.config["destination"] or "尚未选择")
         self.status = tk.StringVar(value="请选择保存目录，随后开始后台监测。")
         self.details = tk.StringVar(value="打开 PPT 或 PDF 后，通常等待 5–15 秒即可查看副本。")
-        self.startup = tk.BooleanVar(value=startup_enabled())
+        try:
+            enabled = migrate_startup()
+        except OSError as exc:
+            enabled = startup_enabled()
+            logging.exception("开机启动设置迁移失败")
+            self.config_error = (self.config_error + "\n" if self.config_error else "") + f"开机启动路径更新失败，请重新勾选开机启动：{exc}"
+        self.startup = tk.BooleanVar(value=enabled)
         self.build_window()
-        self.icon = pystray.Icon("ZhitingPPTSave", make_icon(), "知庭 · PPT / PDF 自动留存", menu=pystray.Menu(
+        self.root.update_idletasks()
+        self.root.minsize(max(660, self.root.winfo_reqwidth()), max(520, self.root.winfo_reqheight()))
+        self.icon = pystray.Icon("PPTSave", make_icon(), "PPTSave · PPT / PDF 自动保存", menu=pystray.Menu(
             pystray.MenuItem("设置与状态", lambda: self.events.put(("show", None)), default=True),
             pystray.MenuItem("打开保存目录", lambda: self.events.put(("open", None))),
             pystray.MenuItem("暂停 / 继续", lambda: self.events.put(("pause", None))),
@@ -74,8 +88,12 @@ class Application:
     def build_window(self):
         panel = ttk.Frame(self.root, padding=24)
         panel.pack(fill="both", expand=True)
-        ttk.Label(panel, text="PPT / PDF 自动留存", font=("Microsoft YaHei UI", 20, "bold")).pack(anchor="w")
-        ttk.Label(panel, text="在 WPS、PowerPoint 或 PDF 阅读器打开本地或 U 盘文件后，自动保留副本。", wraplength=590).pack(anchor="w", pady=(8, 20))
+        heading = ttk.Frame(panel)
+        heading.pack(fill="x")
+        ttk.Label(heading, text="PPTSave", font=("Microsoft YaHei UI", 22, "bold")).pack(side="left")
+        ttk.Label(heading, text="仅供学习交流，请在获得授权后使用。", foreground="#666666",
+                  font=("Microsoft YaHei UI", 9)).pack(side="right", anchor="n", pady=4)
+        ttk.Label(panel, text="打开本地或 U 盘中的 PPT / PDF 后，自动保存副本到指定目录。", wraplength=590).pack(anchor="w", pady=(8, 20))
         ttk.Label(panel, text="保存目录", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w")
         ttk.Entry(panel, textvariable=self.destination, state="readonly").pack(fill="x", pady=6)
         row = ttk.Frame(panel)
@@ -86,6 +104,10 @@ class Application:
         ttk.Separator(panel).pack(fill="x", pady=(0, 12))
         ttk.Label(panel, textvariable=self.status, font=("Microsoft YaHei UI", 11, "bold"), wraplength=590).pack(anchor="w")
         ttk.Label(panel, textvariable=self.details, wraplength=590, justify="left").pack(anchor="w", pady=10)
+        author = ttk.Label(panel, text="作者：duzhongrongdzr-del · GitHub", foreground="#2463a3", cursor="hand2", takefocus=True)
+        author.pack(side="bottom", anchor="w", pady=(14, 0))
+        author.bind("<Button-1>", lambda event: webbrowser.open(AUTHOR_URL))
+        author.bind("<Return>", lambda event: webbrowser.open(AUTHOR_URL))
         controls = ttk.Frame(panel)
         controls.pack(side="bottom", fill="x", pady=(12, 0))
         self.pause_button = ttk.Button(controls, text="暂停", command=self.toggle_pause)
@@ -135,7 +157,7 @@ class Application:
             paused = self.paused
         self.pause_button.config(text="继续" if paused else "暂停")
         self.status.set("已暂停" if paused else "正在恢复监测…")
-        self.icon.title = "知庭 · 已暂停" if paused else "知庭 · PPT / PDF 自动留存"
+        self.icon.title = "PPTSave · 已暂停" if paused else "PPTSave · PPT / PDF 自动保存"
         self.wake.set()
 
     def cancelled(self, expected_directory):
@@ -232,7 +254,7 @@ class Application:
             self.root.after(200, self.pump)
 
     def export_diagnostics(self):
-        path = filedialog.asksaveasfilename(title="保存诊断（包含本机文件路径）", defaultextension=".json", initialfile="zhiting-diagnostics.json", filetypes=[("JSON", "*.json")])
+        path = filedialog.asksaveasfilename(title="保存诊断（包含本机文件路径）", defaultextension=".json", initialfile="PPTSave-diagnostics.json", filetypes=[("JSON", "*.json")])
         if not path:
             return
         try:
@@ -264,13 +286,17 @@ def run(background=False):
     import win32api
     import win32event
     import winerror
-    mutex = win32event.CreateMutex(None, False, r"Local\ZhitingPPTSave")
+    handles = []
     try:
-        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
-            if not background:
-                win32api.MessageBox(0, "程序已在运行。请在右下角托盘（含隐藏图标）中找到绿色图标，双击打开设置。", "知庭 PPT / PDF 自动留存", 0)
-            return
+        # Also hold the legacy mutex: never migrate a live old instance's files.
+        for name in (r"Local\PPTSave", r"Local\ZhitingPPTSave"):
+            handles.append(win32event.CreateMutex(None, False, name))
+            if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+                if not background:
+                    win32api.MessageBox(0, "程序或旧版本已在运行。请在右下角托盘（含隐藏图标）中打开设置；更新时请先退出旧程序。", "PPTSave", 0)
+                return
         application = Application(background)
         application.root.mainloop()
     finally:
-        win32api.CloseHandle(mutex)
+        for mutex in reversed(handles):
+            win32api.CloseHandle(mutex)

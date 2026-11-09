@@ -1,5 +1,6 @@
 """Streaming, content-addressed local archive. No Office or GUI dependency."""
 from dataclasses import dataclass
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 import hashlib
@@ -53,11 +54,25 @@ class Archive:
     def __init__(self, directory):
         self.root = Path(directory).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.meta = self.root / ".zhiting"
+        self.meta = self.root / ".pptsave"
+        legacy = self.root / ".zhiting"
+        if legacy.is_dir() and not self.meta.exists():
+            legacy.rename(self.meta)
         self.meta.mkdir(exist_ok=True)
         self.db = sqlite3.connect(self.meta / "index.sqlite3", timeout=10)
         self.db.execute("CREATE TABLE IF NOT EXISTS copies (digest TEXT PRIMARY KEY, relative_path TEXT NOT NULL, source TEXT, created TEXT)")
         self.db.commit()
+        # Preserve both histories if a partial upgrade left two metadata folders.
+        legacy_index = legacy / "index.sqlite3"
+        if legacy_index.is_file():
+            try:
+                with closing(sqlite3.connect(legacy_index.as_uri() + "?mode=ro", uri=True)) as old:
+                    rows = old.execute("SELECT digest, relative_path, source, created FROM copies").fetchall()
+                with self.db:
+                    self.db.executemany("INSERT OR IGNORE INTO copies VALUES (?, ?, ?, ?)", rows)
+            except Exception:
+                self.db.close()
+                raise
         self.cache = {}
 
     def close(self):
