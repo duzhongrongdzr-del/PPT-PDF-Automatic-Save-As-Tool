@@ -9,7 +9,7 @@ import sqlite3
 import tempfile
 import time
 
-EXTENSIONS = {".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".ppsm"}
+EXTENSIONS = {".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".ppsm", ".pdf"}
 CHUNK = 1024 * 1024
 
 
@@ -19,7 +19,7 @@ def supported(path):
 
 
 def temporary_name(path):
-    return Path(path).name.lower().startswith(("~tmp", "~wpp", "~ppt"))
+    return Path(path).name.lower().startswith(("~tmp", "~wpp", "~ppt", "~pdf"))
 
 
 def move_without_overwrite(source, destination):

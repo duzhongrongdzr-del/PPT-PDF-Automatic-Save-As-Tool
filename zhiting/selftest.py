@@ -25,6 +25,13 @@ def run(output):
         assert saved.status == "saved"
         assert Path(saved.destination).name == source.name
         assert archive.archive(source).status == "unchanged"
+        pdf = root / "PDF展示.pdf"
+        pdf.write_bytes(b"%PDF-1.4\nsmoke-test")
+        pdf_saved = archive.archive(pdf)
+        assert pdf_saved.status == "saved"
+        assert Path(pdf_saved.destination).name == pdf.name
+        assert Path(pdf_saved.destination).read_bytes() == pdf.read_bytes()
+        assert archive.archive(pdf).status == "unchanged"
         archive.close()
         # Verify Windows shortcut reading in the frozen app, using isolated fixtures.
         roaming = root / "Roaming"

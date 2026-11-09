@@ -48,16 +48,16 @@ class Application:
         self.paused = False
         self.snapshot = {}
         self.root = tk.Tk()
-        self.root.title(f"知庭 · PPT 自动留存  {__version__}")
+        self.root.title(f"知庭 · PPT / PDF 自动留存  {__version__}")
         self.root.geometry("660x490")
         self.root.minsize(600, 460)
         self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
         self.destination = tk.StringVar(value=self.config["destination"] or "尚未选择")
         self.status = tk.StringVar(value="请选择保存目录，随后开始后台监测。")
-        self.details = tk.StringVar(value="打开 PPT 后，通常等待 5–15 秒即可查看副本。")
+        self.details = tk.StringVar(value="打开 PPT 或 PDF 后，通常等待 5–15 秒即可查看副本。")
         self.startup = tk.BooleanVar(value=startup_enabled())
         self.build_window()
-        self.icon = pystray.Icon("ZhitingPPTSave", make_icon(), "知庭 · PPT 自动留存", menu=pystray.Menu(
+        self.icon = pystray.Icon("ZhitingPPTSave", make_icon(), "知庭 · PPT / PDF 自动留存", menu=pystray.Menu(
             pystray.MenuItem("设置与状态", lambda: self.events.put(("show", None)), default=True),
             pystray.MenuItem("打开保存目录", lambda: self.events.put(("open", None))),
             pystray.MenuItem("暂停 / 继续", lambda: self.events.put(("pause", None))),
@@ -74,8 +74,8 @@ class Application:
     def build_window(self):
         panel = ttk.Frame(self.root, padding=24)
         panel.pack(fill="both", expand=True)
-        ttk.Label(panel, text="PPT 自动留存", font=("Microsoft YaHei UI", 20, "bold")).pack(anchor="w")
-        ttk.Label(panel, text="WPS / PowerPoint 打开本地或 U 盘演示文件后，自动保留副本。", wraplength=590).pack(anchor="w", pady=(8, 20))
+        ttk.Label(panel, text="PPT / PDF 自动留存", font=("Microsoft YaHei UI", 20, "bold")).pack(anchor="w")
+        ttk.Label(panel, text="在 WPS、PowerPoint 或 PDF 阅读器打开本地或 U 盘文件后，自动保留副本。", wraplength=590).pack(anchor="w", pady=(8, 20))
         ttk.Label(panel, text="保存目录", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w")
         ttk.Entry(panel, textvariable=self.destination, state="readonly").pack(fill="x", pady=6)
         row = ttk.Frame(panel)
@@ -95,7 +95,7 @@ class Application:
         ttk.Label(panel, text="只读取已经保存的文件；同内容去重，保存修改后留新版本。\n关闭此窗口后仍会运行；完全停止请右键托盘图标 → 退出。", wraplength=590, foreground="#666666").pack(side="bottom", anchor="w")
 
     def choose_directory(self):
-        chosen = filedialog.askdirectory(title="选择 PPT 副本保存目录")
+        chosen = filedialog.askdirectory(title="选择 PPT / PDF 副本保存目录")
         if not chosen:
             return
         try:
@@ -135,7 +135,7 @@ class Application:
             paused = self.paused
         self.pause_button.config(text="继续" if paused else "暂停")
         self.status.set("已暂停" if paused else "正在恢复监测…")
-        self.icon.title = "知庭 · 已暂停" if paused else "知庭 · PPT 自动留存"
+        self.icon.title = "知庭 · 已暂停" if paused else "知庭 · PPT / PDF 自动留存"
         self.wake.set()
 
     def cancelled(self, expected_directory):
@@ -220,11 +220,11 @@ class Application:
                         elif payload.get("unresolved_names"):
                             detail = "检测到临时文件，原名尚未确认；副本保存在“待确认原名”文件夹。请导出诊断以便进一步适配。"
                         elif not count and payload["processes"]:
-                            detail = "检测到 WPS / PowerPoint，暂未取得文件路径。请打开已保存的 PPT；若仍无法识别，请导出诊断。"
+                            detail = "检测到文稿阅读器，暂未取得文件路径。请打开本地或 U 盘上的 PPT / PDF；若仍无法识别，请导出诊断。"
                         elif payload["last_copy"]:
                             detail = "最近保存：" + payload["last_copy"]
                         else:
-                            detail = "等待你在 WPS / PowerPoint 中打开 PPT。"
+                            detail = "等待你打开本地或 U 盘上的 PPT / PDF。"
                         self.details.set(detail[:300])
         except queue.Empty:
             pass
@@ -239,7 +239,7 @@ class Application:
             with self.lock:
                 config = dict(self.config)
             data = {"version": __version__, "os": platform.platform(), "config": config, "scan": self.snapshot,
-                    "note": "仅保存在本机，包含文件路径；不包含 PPT 内容。"}
+                    "note": "仅保存在本机，包含文件路径；不包含 PPT / PDF 内容。"}
             Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             messagebox.showinfo("诊断已保存", path)
         except OSError as exc:
@@ -268,7 +268,7 @@ def run(background=False):
     try:
         if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
             if not background:
-                win32api.MessageBox(0, "程序已在运行。请在右下角托盘（含隐藏图标）中找到绿色图标，双击打开设置。", "知庭 PPT 自动留存", 0)
+                win32api.MessageBox(0, "程序已在运行。请在右下角托盘（含隐藏图标）中找到绿色图标，双击打开设置。", "知庭 PPT / PDF 自动留存", 0)
             return
         application = Application(background)
         application.root.mainloop()

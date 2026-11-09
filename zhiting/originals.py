@@ -7,7 +7,8 @@ from .archive import EXTENSIONS, digest_file, signature, temporary_name
 def title_matches_name(title, filename):
     name = Path(filename).name
     stem = Path(filename).stem
-    tail = r"(?:\s*(?:\[[^\]]*\]|\([^)]*\)|（[^）]*）))*\s*(?:[-—–]\s*(?:WPS|Microsoft PowerPoint|PowerPoint).*)?"
+    reader = r"(?:WPS|Microsoft PowerPoint|PowerPoint|Adobe|Acrobat|SumatraPDF|Foxit|福昕|PDF-XChange|Microsoft Edge|Google Chrome|Mozilla Firefox)"
+    tail = r"(?:\s*(?:\[[^\]]*\]|\([^)]*\)|（[^）]*）))*\s*(?:[-—–]\s*(?:[^-—–]{1,80}\s[-—–]\s)?" + reader + r".*)?"
     if Path(name).suffix.lower() in EXTENSIONS:
         prefixes = [re.escape(name), re.escape(stem)]
     else:

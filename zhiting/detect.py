@@ -1,4 +1,4 @@
-"""Best-effort discovery of already open local presentations on Windows.
+"""Best-effort discovery of already open local PPT and PDF files on Windows.
 
 No Dispatch(progID), launch, document Save, or recursive disk search is used.
 An isolated process bounds unresponsive COM and file handle inspection.
@@ -9,13 +9,14 @@ from pathlib import Path
 import time
 from .archive import supported, temporary_name
 from .originals import prefer_originals, title_matches_name
+from .readers import BROWSER_PROCESSES, PPT_PROCESSES, PROCESS_NAMES, local_reference, select_processes
 
-PROCESS_NAMES = {"wpp.exe", "wps.exe", "wpspresentation.exe", "powerpnt.exe"}
 PROG_IDS = ("kwpp.Application", "KWPP.Application.9", "PowerPoint.Application")
 
 
 def _existing_path(value):
-    if not isinstance(value, str) or not value:
+    value = local_reference(value)
+    if not value:
         return None
     p = Path(value.strip('"'))
     if p.is_absolute() and supported(p) and p.is_file():
@@ -23,21 +24,34 @@ def _existing_path(value):
     return None
 
 
-def _window_titles(processes):
+def _reader_windows(processes):
     import win32gui
     import win32process
     pids = {p.pid for p in processes}
-    titles = []
+    windows = []
 
     def collect(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and win32process.GetWindowThreadProcessId(hwnd)[1] in pids:
+        pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+        if win32gui.IsWindowVisible(hwnd) and pid in pids:
             title = win32gui.GetWindowText(hwnd)
             if title:
-                titles.append(title)
+                windows.append({"pid": pid, "title": title})
         return True
 
     win32gui.EnumWindows(collect, None)
-    return titles
+    return windows
+
+
+def _commandline_pdfs(process, titles):
+    paths = []
+    try:
+        for argument in process.cmdline()[1:]:
+            path = _existing_path(argument)
+            if path and Path(path).suffix.lower() == ".pdf" and any(title_matches_name(title, path) for title in titles):
+                paths.append(path)
+    except Exception:
+        pass
+    return paths
 
 
 def _original_candidates(processes, titles):
@@ -88,24 +102,42 @@ def _worker(connection):
             paths = {}
             notes = []
             processes = []
-            for p in psutil.process_iter(["pid", "name"]):
+            for p in psutil.process_iter(["pid", "name", "ppid"]):
                 if (p.info["name"] or "").lower() in PROCESS_NAMES:
                     processes.append(p)
+            try:
+                windows = _reader_windows(processes)
+            except Exception as exc:
+                windows = []
+                notes.append(f"阅读器窗口识别：{type(exc).__name__}")
+            processes = select_processes(processes, windows)
+            selected_pids = {p.pid for p in processes}
+            windows = [w for w in windows if w["pid"] in selected_pids]
+            titles = [w["title"] for w in windows]
             names = [{"pid": p.pid, "name": p.info["name"]} for p in processes]
             connection.send({"paths": paths, "notes": notes, "processes": names, "done": not processes})
             if not processes:
                 continue
+            # A local PDF launch argument plus a matching current window is useful
+            # when a browser has already closed its original file handle.
+            for p in processes:
+                current_titles = [w["title"] for w in windows if w["pid"] == p.pid]
+                for path in _commandline_pdfs(p, current_titles):
+                    paths[path] = "PDF 启动路径与当前窗口"
+            connection.send({"paths": paths, "notes": notes, "processes": names, "done": False})
             # WPS editions without an exposed automation API may still hold the file open.
             for p in processes:
                 try:
                     for item in p.open_files():
                         path = _existing_path(item.path)
-                        if path:
+                        is_browser = (p.info["name"] or "").lower() in BROWSER_PROCESSES
+                        if path and (not is_browser or Path(path).suffix.lower() == ".pdf"):
                             paths[path] = "文件句柄"
                 except (psutil.Error, OSError) as exc:
                     notes.append(f"进程 {p.pid} 句柄读取：{type(exc).__name__}")
                 connection.send({"paths": paths, "notes": notes, "processes": names, "done": False})
-            for prog_id in PROG_IDS:
+            has_ppt_reader = any((p.info["name"] or "").lower() in PPT_PROCESSES for p in processes)
+            for prog_id in (PROG_IDS if has_ppt_reader else ()):
                 app = collection = document = None
                 try:
                     # Wrapping an existing IDispatch cannot start a new Office instance.
@@ -129,6 +161,23 @@ def _worker(connection):
                 finally:
                     document = collection = app = active = None
                 connection.send({"paths": paths, "notes": notes, "processes": names, "done": False})
+            if any((p.info["name"] or "").lower() in {"acrobat.exe", "acrord32.exe"} for p in processes):
+                active = app = document = pdf = None
+                try:
+                    active = pythoncom.GetActiveObject("AcroExch.App")
+                    app = win32com.client.dynamic.Dispatch(active.QueryInterface(pythoncom.IID_IDispatch))
+                    for index in range(int(app.GetNumAVDocs())):
+                        document = app.GetAVDoc(index)
+                        pdf = document.GetPDDoc()
+                        path = _existing_path(str(pdf.GetFileName()))
+                        if path and Path(path).suffix.lower() == ".pdf":
+                            paths[path] = "Acrobat 已打开文稿"
+                        document = pdf = None
+                except Exception as exc:
+                    notes.append(f"Acrobat 未提供可读文稿接口：{type(exc).__name__}")
+                finally:
+                    active = app = document = pdf = None
+                connection.send({"paths": paths, "notes": notes, "processes": names, "done": False})
             # Read ROT names only, never bind a moniker (which could open a document).
             try:
                 table = pythoncom.GetRunningObjectTable()
@@ -143,12 +192,10 @@ def _worker(connection):
                 table = context = moniker = None
             except Exception as exc:
                 notes.append(f"运行对象表：{type(exc).__name__}")
-            titles = []
             unresolved = []
             recovered = []
             if any(temporary_name(p) for p in paths):
                 try:
-                    titles = _window_titles(processes)
                     candidates = _original_candidates(processes, titles)
                     paths, unresolved, recovered = prefer_originals(paths, candidates, digest_cache)
                 except Exception as exc:

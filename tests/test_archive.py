@@ -136,9 +136,30 @@ class ArchiveTests(unittest.TestCase):
             load_config(path)
 
     def test_supported_extensions(self):
-        for extension in ("ppt", "pptx", "pptm", "pps", "ppsx", "ppsm"):
+        for extension in ("ppt", "pptx", "pptm", "pps", "ppsx", "ppsm", "pdf", "PDF"):
             self.assertTrue(supported("test." + extension))
-        self.assertFalse(supported("test.pdf"))
+        self.assertFalse(supported("test.docx"))
+
+    def test_pdf_original_name_dedup_and_new_version(self):
+        source = self.source("展示材料.PDF", b"%PDF-1.4\noriginal")
+        first = self.archive.archive(source)
+        self.assertEqual(first.status, "saved")
+        self.assertEqual(Path(first.destination).name, source.name)
+        self.assertEqual(Path(first.destination).read_bytes(), source.read_bytes())
+        duplicate = self.archive.archive(self.source("其他盘/改名.pdf", source.read_bytes()))
+        self.assertEqual(duplicate.destination, first.destination)
+        source.write_bytes(b"%PDF-1.4\nupdated presentation")
+        second = self.archive.archive(source)
+        self.assertEqual(second.status, "saved")
+        self.assertEqual(Path(second.destination).name, source.name)
+        self.assertNotEqual(first.destination, second.destination)
+
+    def test_ppt_and_pdf_with_same_stem_are_both_saved(self):
+        powerpoint = self.archive.archive(self.source("展示.pptx", b"powerpoint"))
+        pdf = self.archive.archive(self.source("展示.pdf", b"%PDF-1.4\npdf"))
+        self.assertEqual(powerpoint.status, "saved")
+        self.assertEqual(pdf.status, "saved")
+        self.assertEqual(Path(powerpoint.destination).parent, Path(pdf.destination).parent)
 
     def test_long_unicode_and_extension_case_preserved(self):
         source = self.source("会议材料" * 18 + ".PPTX")
